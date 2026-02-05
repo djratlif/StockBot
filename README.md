@@ -63,6 +63,8 @@ cp .env.example .env
 
 ### 3. Configure Environment Variables
 
+**⚠️ SECURITY WARNING: Never commit your `.env` file to GitHub! Your API keys should remain private.**
+
 Edit `backend/.env` with your settings:
 
 ```env
