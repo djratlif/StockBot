@@ -66,8 +66,8 @@ class BotConfigBase(BaseModel):
     max_daily_trades: int = Field(default=5, ge=1, le=50)
     max_position_size: float = Field(default=0.20, ge=0.01, le=1.0)
     risk_tolerance: RiskToleranceEnum = RiskToleranceEnum.MEDIUM
-    trading_hours_start: str = Field(default="09:30", regex=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
-    trading_hours_end: str = Field(default="16:00", regex=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    trading_hours_start: str = Field(default="09:30", pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    trading_hours_end: str = Field(default="16:00", pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
     is_active: bool = False
     stop_loss_percentage: float = Field(default=-0.10, ge=-1.0, le=0.0)
     take_profit_percentage: float = Field(default=0.15, ge=0.0, le=5.0)

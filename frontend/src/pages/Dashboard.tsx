@@ -143,7 +143,7 @@ const Dashboard: React.FC = () => {
         <Grid item xs={12} md={6} lg={3}>
           <Card>
             <CardContent>
-              <Box display="flex" alignItems="center" justify="space-between" mb={2}>
+              <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
                 <Typography variant="h6">Bot Status</Typography>
                 <Chip 
                   label={botStatus?.is_active ? 'Active' : 'Inactive'}
