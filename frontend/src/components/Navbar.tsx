@@ -11,6 +11,7 @@ import {
   AccountBalance as PortfolioIcon,
   TrendingUp as TradingIcon,
   Settings as SettingsIcon,
+  BugReport as DebugIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -23,6 +24,7 @@ const Navbar: React.FC = () => {
     { label: 'Portfolio', path: '/portfolio', icon: <PortfolioIcon /> },
     { label: 'Trading', path: '/trading', icon: <TradingIcon /> },
     { label: 'Config', path: '/config', icon: <SettingsIcon /> },
+    { label: 'Debug', path: '/debug', icon: <DebugIcon /> },
   ];
 
   return (

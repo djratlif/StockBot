@@ -190,6 +190,24 @@ export const tradesAPI = {
     api.get('/api/trades/performance/daily').then(res => res.data),
 };
 
+// Logs API
+export const logsAPI = {
+  getActivityLogs: (limit: number = 20, hours: number = 24): Promise<any> =>
+    api.get(`/api/logs/activity?limit=${limit}&hours=${hours}`).then(res => res.data),
+  
+  addActivityLog: (level: string, message: string, symbol?: string, trade_id?: number): Promise<APIResponse> =>
+    api.post('/api/logs/activity', { level, message, symbol, trade_id }).then(res => res.data),
+  
+  clearActivityLogs: (days: number = 7): Promise<APIResponse> =>
+    api.delete(`/api/logs/activity?days=${days}`).then(res => res.data),
+  
+  getDebugInfo: (limit: number = 50): Promise<any> =>
+    api.get(`/api/logs/debug?limit=${limit}`).then(res => res.data),
+  
+  getSystemStatus: (): Promise<any> =>
+    api.get('/api/logs/system-status').then(res => res.data),
+};
+
 // Error handling
 api.interceptors.response.use(
   (response) => response,

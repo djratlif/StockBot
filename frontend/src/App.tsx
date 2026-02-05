@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Portfolio from './pages/Portfolio';
 import Trading from './pages/Trading';
 import Configuration from './pages/Configuration';
+import Debug from './pages/Debug';
 import Navbar from './components/Navbar';
 
 const theme = createTheme({
@@ -42,6 +43,7 @@ function App() {
               <Route path="/portfolio" element={<Portfolio />} />
               <Route path="/trading" element={<Trading />} />
               <Route path="/config" element={<Configuration />} />
+              <Route path="/debug" element={<Debug />} />
             </Routes>
           </Box>
         </Box>

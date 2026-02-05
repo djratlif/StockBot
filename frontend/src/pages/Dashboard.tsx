@@ -20,6 +20,8 @@ import {
 } from '@mui/icons-material';
 import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
 import type { PortfolioSummary, BotStatus, TradingStats } from '../services/api';
+import TimeTicker from '../components/TimeTicker';
+import ActivityFeed from '../components/ActivityFeed';
 
 const Dashboard: React.FC = () => {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null);
@@ -88,6 +90,9 @@ const Dashboard: React.FC = () => {
       <Typography variant="h4" gutterBottom>
         Trading Dashboard
       </Typography>
+
+      {/* Time Ticker */}
+      <TimeTicker />
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -278,6 +283,11 @@ const Dashboard: React.FC = () => {
               </Grid>
             </CardContent>
           </Card>
+        </Grid>
+
+        {/* Activity Feed - Full Width */}
+        <Grid item xs={12}>
+          <ActivityFeed />
         </Grid>
       </Grid>
     </Box>
