@@ -32,6 +32,32 @@ An intelligent stock trading bot that uses OpenAI GPT-4 for predictive analytics
 
 ## 🚀 Quick Start
 
+### Option 1: Easy Startup (Recommended)
+
+**For macOS/Linux:**
+```bash
+git clone <your-repo-url>
+cd StockBot
+./start.sh
+```
+
+**For Windows:**
+```bash
+git clone <your-repo-url>
+cd StockBot
+start.bat
+```
+
+The startup script will:
+- ✅ Check all prerequisites (Python, Node.js)
+- ✅ Set up virtual environments automatically
+- ✅ Install all dependencies
+- ✅ Create `.env` file from template
+- ✅ Start both backend and frontend servers
+- ✅ Open the correct URLs for you
+
+### Option 2: Manual Setup
+
 ### 1. Clone the Repository
 
 ```bash
