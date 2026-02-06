@@ -14,6 +14,7 @@ import {
   BugReport as DebugIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
+import TimeTicker from './TimeTicker';
 
 const Navbar: React.FC = () => {
   const navigate = useNavigate();
@@ -29,11 +30,13 @@ const Navbar: React.FC = () => {
 
   return (
     <AppBar position="static" sx={{ mb: 2 }}>
-      <Toolbar>
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          🤖 StockBot
+      <Toolbar sx={{ minHeight: '64px !important' }}>
+        <Typography variant="h6" component="div" sx={{ mr: 3 }}>
+          StockBot
         </Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        
+        {/* Navigation Items */}
+        <Box sx={{ display: 'flex', gap: 1, mr: 3 }}>
           {navItems.map((item) => (
             <Button
               key={item.path}
@@ -47,6 +50,11 @@ const Navbar: React.FC = () => {
               {item.label}
             </Button>
           ))}
+        </Box>
+        
+        {/* Time and Market Status - Right aligned */}
+        <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <TimeTicker />
         </Box>
       </Toolbar>
     </AppBar>

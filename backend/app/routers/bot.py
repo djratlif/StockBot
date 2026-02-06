@@ -106,10 +106,59 @@ async def start_bot(db: Session = Depends(get_db)):
         config.is_active = True
         db.commit()
         
+        # Add activity log entry
+        from app.models.models import ActivityLog
+        from datetime import datetime
+        import pytz
+        
+        est = pytz.timezone('US/Eastern')
+        activity = ActivityLog(
+            action="BOT_STARTED",
+            details="Trading bot has been activated and is monitoring the market",
+            timestamp=datetime.now(est)
+        )
+        db.add(activity)
+        db.commit()
+        
         logger.info("Trading bot started")
+        
+        # Perform initial market analysis
+        try:
+            from app.services.stock_service import stock_service
+            market_status = stock_service.get_market_status()
+            
+            # Log market status
+            market_activity = ActivityLog(
+                action="MARKET_CHECK",
+                details=f"Market is {'OPEN' if market_status.get('is_open', False) else 'CLOSED'}. Bot is ready to trade when market opens.",
+                timestamp=datetime.now(est)
+            )
+            db.add(market_activity)
+            
+            # If market is open, analyze some trending stocks
+            if market_status.get('is_open', False):
+                trending_stocks = stock_service.get_trending_stocks()[:3]  # Get top 3
+                for symbol in trending_stocks:
+                    try:
+                        price = stock_service.get_current_price(symbol)
+                        if price:
+                            trend_activity = ActivityLog(
+                                action="STOCK_ANALYSIS",
+                                details=f"Monitoring {symbol} at ${price:.2f}",
+                                timestamp=datetime.now(est)
+                            )
+                            db.add(trend_activity)
+                    except Exception as e:
+                        logger.warning(f"Could not analyze {symbol}: {str(e)}")
+            
+            db.commit()
+            
+        except Exception as e:
+            logger.warning(f"Could not perform initial analysis: {str(e)}")
+        
         return APIResponse(
             success=True,
-            message="Trading bot started successfully",
+            message="Trading bot started successfully and is monitoring the market",
             data={"is_active": True}
         )
     except HTTPException:
@@ -128,6 +177,20 @@ async def stop_bot(db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Bot configuration not found")
         
         config.is_active = False
+        db.commit()
+        
+        # Add activity log entry
+        from app.models.models import ActivityLog
+        from datetime import datetime
+        import pytz
+        
+        est = pytz.timezone('US/Eastern')
+        activity = ActivityLog(
+            action="BOT_STOPPED",
+            details="Trading bot has been deactivated and is no longer monitoring the market",
+            timestamp=datetime.now(est)
+        )
+        db.add(activity)
         db.commit()
         
         logger.info("Trading bot stopped")

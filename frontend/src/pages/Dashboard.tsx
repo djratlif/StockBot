@@ -20,7 +20,6 @@ import {
 } from '@mui/icons-material';
 import { portfolioAPI, botAPI, tradesAPI } from '../services/api';
 import type { PortfolioSummary, BotStatus, TradingStats } from '../services/api';
-import TimeTicker from '../components/TimeTicker';
 import ActivityFeed from '../components/ActivityFeed';
 
 const Dashboard: React.FC = () => {
@@ -87,12 +86,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Trading Dashboard
-      </Typography>
 
-      {/* Time Ticker */}
-      <TimeTicker />
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>

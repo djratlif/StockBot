@@ -6,6 +6,7 @@ import logging
 from app.models.schemas import StockInfo, MarketDataResponse
 from app.models.models import MarketData
 from sqlalchemy.orm import Session
+from app.services.alpha_vantage_service import alpha_vantage_service
 
 logger = logging.getLogger(__name__)
 
@@ -13,15 +14,29 @@ class StockService:
     def __init__(self):
         self.cache = {}
         self.cache_duration = timedelta(minutes=1)  # Cache for 1 minute
+        self.use_alpha_vantage = True  # Primary data source
     
     def get_stock_info(self, symbol: str) -> Optional[StockInfo]:
-        """Get comprehensive stock information"""
+        """Get comprehensive stock information with Alpha Vantage primary, Yahoo Finance fallback"""
         try:
             # Check cache first
             cache_key = f"{symbol}_info"
             if self._is_cached(cache_key):
                 return self.cache[cache_key]["data"]
             
+            # Try Alpha Vantage first
+            if self.use_alpha_vantage:
+                try:
+                    stock_info = alpha_vantage_service.get_stock_info(symbol)
+                    if stock_info:
+                        logger.info(f"Successfully fetched {symbol} data from Alpha Vantage")
+                        self._cache_data(cache_key, stock_info)
+                        return stock_info
+                except Exception as e:
+                    logger.warning(f"Alpha Vantage failed for {symbol}: {str(e)}, falling back to Yahoo Finance")
+            
+            # Fallback to Yahoo Finance
+            logger.info(f"Using Yahoo Finance fallback for {symbol}")
             ticker = yf.Ticker(symbol)
             info = ticker.info
             hist = ticker.history(period="1d")
@@ -54,13 +69,26 @@ class StockService:
             return None
     
     def get_current_price(self, symbol: str) -> Optional[float]:
-        """Get current stock price"""
+        """Get current stock price with Alpha Vantage primary, Yahoo Finance fallback"""
         try:
             # Check cache first
             cache_key = f"{symbol}_price"
             if self._is_cached(cache_key):
                 return self.cache[cache_key]["data"]
             
+            # Try Alpha Vantage first
+            if self.use_alpha_vantage:
+                try:
+                    current_price = alpha_vantage_service.get_current_price(symbol)
+                    if current_price:
+                        logger.info(f"Successfully fetched {symbol} price from Alpha Vantage: ${current_price}")
+                        self._cache_data(cache_key, current_price)
+                        return current_price
+                except Exception as e:
+                    logger.warning(f"Alpha Vantage price fetch failed for {symbol}: {str(e)}, falling back to Yahoo Finance")
+            
+            # Fallback to Yahoo Finance
+            logger.info(f"Using Yahoo Finance fallback for {symbol} price")
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period="1d")
             

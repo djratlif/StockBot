@@ -80,48 +80,33 @@ const TimeTicker: React.FC = () => {
   }, []);
 
   return (
-    <Box 
-      display="flex" 
-      justifyContent="space-between" 
-      alignItems="center" 
-      sx={{ 
-        mb: 3, 
-        p: 2, 
-        backgroundColor: 'background.paper',
-        borderRadius: 1,
-        border: '1px solid',
-        borderColor: 'divider'
-      }}
-    >
-      <Box display="flex" alignItems="center" gap={2}>
-        <Schedule color="primary" />
-        <Box>
-          <Typography variant="h6" component="div">
-            {formatTimeEST(currentTime)} EST
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Eastern Standard Time
-          </Typography>
-        </Box>
+    <Box display="flex" alignItems="center" gap={2}>
+      <Box display="flex" alignItems="center" gap={1}>
+        <Schedule sx={{ color: 'inherit', fontSize: '1.1rem' }} />
+        <Typography variant="body2" sx={{ color: 'inherit', fontWeight: 500 }}>
+          {formatTimeEST(currentTime)} EST
+        </Typography>
       </Box>
       
-      <Box display="flex" alignItems="center" gap={2}>
-        <Box textAlign="right">
-          <Typography variant="body2" color="text.secondary">
-            {getNextMarketEvent()}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            NYSE Trading Hours: 9:30 AM - 4:00 PM EST
-          </Typography>
-        </Box>
-        
-        <Chip
-          icon={isMarketOpen ? <TrendingUp /> : <TrendingDown />}
-          label={isMarketOpen ? 'Market Open' : 'Market Closed'}
-          color={isMarketOpen ? 'success' : 'default'}
-          variant={isMarketOpen ? 'filled' : 'outlined'}
-        />
-      </Box>
+      <Box sx={{ height: '20px', width: '1px', backgroundColor: 'rgba(255,255,255,0.3)' }} />
+      
+      <Chip
+        icon={isMarketOpen ? <TrendingUp /> : <TrendingDown />}
+        label={isMarketOpen ? 'Open' : 'Closed'}
+        size="small"
+        sx={{
+          backgroundColor: isMarketOpen ? 'rgba(76, 175, 80, 0.2)' : 'rgba(255,255,255,0.1)',
+          color: 'inherit',
+          border: isMarketOpen ? '1px solid rgba(76, 175, 80, 0.5)' : '1px solid rgba(255,255,255,0.3)',
+          '& .MuiChip-icon': {
+            color: isMarketOpen ? '#4caf50' : 'inherit'
+          }
+        }}
+      />
+      
+      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+        {getNextMarketEvent()}
+      </Typography>
     </Box>
   );
 };

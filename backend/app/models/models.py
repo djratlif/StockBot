@@ -79,3 +79,11 @@ class TradingLog(Base):
     symbol = Column(String(10), nullable=True)
     trade_id = Column(Integer, nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+class ActivityLog(Base):
+    __tablename__ = "activity_log"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    action = Column(String(50), nullable=False)  # BOT_STARTED, BOT_STOPPED, MARKET_CHECK, etc.
+    details = Column(Text, nullable=False)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
