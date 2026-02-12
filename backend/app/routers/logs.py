@@ -164,6 +164,8 @@ async def get_debug_info(
 ):
     """Get comprehensive debug information including recent activity and trading logs"""
     try:
+        import pytz
+        
         # Get recent activity logs
         activity_logs = db.query(ActivityLog).order_by(
             ActivityLog.timestamp.desc()
@@ -173,6 +175,9 @@ async def get_debug_info(
         trading_logs = db.query(TradingLog).order_by(
             TradingLog.timestamp.desc()
         ).limit(limit//2).all()
+        
+        # EST timezone for formatting
+        est = pytz.timezone('US/Eastern')
         
         # Categorize logs
         debug_info = {
@@ -184,11 +189,20 @@ async def get_debug_info(
             "trades": []
         }
         
+        # Helper function to format timestamp to EST
+        def format_timestamp_est(timestamp):
+            if timestamp.tzinfo is None:
+                # If timestamp is naive, assume it's UTC
+                timestamp = pytz.utc.localize(timestamp)
+            # Convert to EST
+            est_time = timestamp.astimezone(est)
+            return est_time.strftime("%Y-%m-%d %H:%M:%S EST")
+        
         # Process activity logs
         for log in activity_logs:
             activity_data = {
                 "id": log.id,
-                "timestamp": log.timestamp.isoformat(),
+                "timestamp": format_timestamp_est(log.timestamp),
                 "action": log.action,
                 "details": log.details,
                 "type": "activity"
@@ -199,7 +213,7 @@ async def get_debug_info(
         for log in trading_logs:
             log_data = {
                 "id": log.id,
-                "timestamp": log.timestamp.isoformat(),
+                "timestamp": format_timestamp_est(log.timestamp),
                 "level": log.level,
                 "message": log.message,
                 "symbol": log.symbol,

@@ -30,11 +30,11 @@ class AlphaVantageService:
         self.cache_duration = 300  # 5 minutes for real-time data
         self.daily_cache_duration = 3600  # 1 hour for daily data
         
-        # Rate limiting
+        # Rate limiting - Premium plan: 150 requests per minute
         self.last_api_call = 0
-        self.min_call_interval = 12  # 12 seconds between calls (5 calls per minute)
+        self.min_call_interval = 0.4  # 0.4 seconds between calls (150 calls per minute)
         self.daily_call_count = 0
-        self.daily_call_limit = 25  # Free tier limit
+        self.daily_call_limit = 216000  # Premium tier: 150 per minute * 60 minutes * 24 hours = 216,000 per day
         self.call_reset_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
     async def _wait_for_rate_limit(self, db_session=None):
