@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     alpha_vantage_api_key: Optional[str] = None
     polygon_api_key: Optional[str] = None
     
+    # Google OAuth
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
+    
     # Database
     database_url: str = "sqlite:///./stockbot.db"
     
@@ -18,6 +22,9 @@ class Settings(BaseSettings):
     secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    
+    # Authentication restrictions
+    allowed_emails: Optional[str] = None  # Comma-separated list of allowed emails
     
     # Bot Configuration
     initial_balance: float = 20.00
@@ -36,6 +43,13 @@ class Settings(BaseSettings):
     
     # CORS
     allowed_origins: list = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    
+    @property
+    def allowed_emails_list(self) -> list:
+        """Convert comma-separated allowed emails to list"""
+        if not self.allowed_emails:
+            return []
+        return [email.strip() for email in self.allowed_emails.split(',')]
     
     class Config:
         env_file = ".env"

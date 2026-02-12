@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, Enum
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, Enum, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
 import enum
@@ -13,30 +14,57 @@ class RiskTolerance(enum.Enum):
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    google_id = Column(String(255), unique=True, index=True, nullable=False)
+    picture = Column(String(500), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    portfolio = relationship("Portfolio", back_populates="user", uselist=False)
+    holdings = relationship("Holdings", back_populates="user")
+    trades = relationship("Trades", back_populates="user")
+    bot_config = relationship("BotConfig", back_populates="user", uselist=False)
+
 class Portfolio(Base):
     __tablename__ = "portfolio"
     
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     cash_balance = Column(Float, nullable=False, default=20.00)
     total_value = Column(Float, nullable=False, default=20.00)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="portfolio")
 
 class Holdings(Base):
     __tablename__ = "holdings"
     
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     symbol = Column(String(10), nullable=False, index=True)
     quantity = Column(Integer, nullable=False)
     average_cost = Column(Float, nullable=False)
     current_price = Column(Float, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="holdings")
 
 class Trades(Base):
     __tablename__ = "trades"
     
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     symbol = Column(String(10), nullable=False, index=True)
     action = Column(Enum(TradeAction), nullable=False)
     quantity = Column(Integer, nullable=False)
@@ -44,11 +72,15 @@ class Trades(Base):
     total_amount = Column(Float, nullable=False)
     ai_reasoning = Column(Text, nullable=True)
     executed_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="trades")
 
 class BotConfig(Base):
     __tablename__ = "bot_config"
     
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     max_daily_trades = Column(Integer, nullable=False, default=5)
     max_position_size = Column(Float, nullable=False, default=0.20)  # 20% of portfolio
     risk_tolerance = Column(Enum(RiskTolerance), nullable=False, default=RiskTolerance.MEDIUM)
@@ -59,6 +91,9 @@ class BotConfig(Base):
     take_profit_percentage = Column(Float, nullable=False, default=0.15)  # +15%
     min_cash_reserve = Column(Float, nullable=False, default=5.00)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="bot_config")
 
 class MarketData(Base):
     __tablename__ = "market_data"

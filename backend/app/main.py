@@ -8,7 +8,7 @@ from app.config import settings
 from app.models.database import engine, Base, get_db
 from app.models.models import Portfolio, BotConfig
 from app.services.portfolio_service import portfolio_service
-from app.routers import portfolio, stocks, bot, trades, logs, alpha_vantage
+from app.routers import portfolio, stocks, bot, trades, logs, alpha_vantage, auth
 from sqlalchemy.orm import Session
 
 # Configure logging
@@ -27,27 +27,8 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created")
     
-    # Initialize portfolio and bot config
-    db = next(get_db())
-    try:
-        # Initialize portfolio if it doesn't exist
-        portfolio_service.initialize_portfolio(db)
-        
-        # Initialize bot config if it doesn't exist
-        bot_config = db.query(BotConfig).first()
-        if not bot_config:
-            bot_config = BotConfig(
-                max_daily_trades=settings.default_max_daily_trades,
-                risk_tolerance=settings.default_risk_tolerance
-            )
-            db.add(bot_config)
-            db.commit()
-            logger.info("Bot configuration initialized")
-        
-    except Exception as e:
-        logger.error(f"Error during startup: {str(e)}")
-    finally:
-        db.close()
+    # Database initialization only - user-specific data created on first login
+    logger.info("Database initialized - user data will be created on first login")
     
     yield
     
@@ -72,6 +53,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router, prefix="/api")  # Auth routes at /api/auth
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
 app.include_router(stocks.router, prefix="/api/stocks", tags=["stocks"])
 app.include_router(bot.router, prefix="/api/bot", tags=["bot"])

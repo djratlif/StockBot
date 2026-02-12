@@ -12,6 +12,33 @@ class RiskToleranceEnum(str, Enum):
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
+# User Authentication Schemas
+class UserBase(BaseModel):
+    email: str
+    name: str
+    picture: Optional[str] = None
+
+class UserCreate(UserBase):
+    google_id: str
+
+class UserResponse(UserBase):
+    id: int
+    google_id: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class GoogleTokenData(BaseModel):
+    token: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
 # Portfolio Schemas
 class PortfolioBase(BaseModel):
     cash_balance: float
