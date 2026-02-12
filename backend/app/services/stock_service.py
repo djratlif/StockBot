@@ -16,7 +16,7 @@ class StockService:
         self.cache_duration = timedelta(minutes=1)  # Cache for 1 minute
         self.use_alpha_vantage = True  # Primary data source
     
-    async def get_stock_info(self, symbol: str) -> Optional[StockInfo]:
+    async def get_stock_info(self, symbol: str, db_session=None) -> Optional[StockInfo]:
         """Get comprehensive stock information with Alpha Vantage primary, Yahoo Finance fallback"""
         try:
             # Check cache first
@@ -27,13 +27,28 @@ class StockService:
             # Try Alpha Vantage first
             if self.use_alpha_vantage:
                 try:
-                    stock_info = await alpha_vantage_service.get_stock_info(symbol)
+                    stock_info = await alpha_vantage_service.get_stock_info(symbol, db_session)
                     if stock_info:
                         logger.info(f"Successfully fetched {symbol} data from Alpha Vantage")
                         self._cache_data(cache_key, stock_info)
                         return stock_info
                 except Exception as e:
                     logger.warning(f"Alpha Vantage failed for {symbol}: {str(e)}, falling back to Yahoo Finance")
+                    
+                    # Log fallback to database
+                    if db_session:
+                        try:
+                            from app.models.models import TradingLog
+                            fallback_log = TradingLog(
+                                level="WARNING",
+                                message=f"Alpha Vantage failed for {symbol}, using Yahoo Finance fallback: {str(e)}",
+                                symbol=symbol,
+                                trade_id=None
+                            )
+                            db_session.add(fallback_log)
+                            db_session.commit()
+                        except Exception as db_error:
+                            logger.error(f"Failed to log fallback to database: {db_error}")
             
             # Fallback to Yahoo Finance
             logger.info(f"Using Yahoo Finance fallback for {symbol}")

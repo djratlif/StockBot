@@ -21,15 +21,32 @@ class AITradingService:
                                 current_holdings: Dict,
                                 portfolio_value: float,
                                 risk_tolerance: RiskToleranceEnum,
-                                max_position_size: float) -> Optional[TradingDecision]:
+                                max_position_size: float,
+                                db_session=None) -> Optional[TradingDecision]:
         """
         Analyze a stock and make a trading decision using AI
         """
         try:
             # Get current stock information
-            stock_info = await stock_service.get_stock_info(symbol)
+            stock_info = await stock_service.get_stock_info(symbol, db_session)
             if not stock_info:
                 logger.error(f"Could not fetch stock info for {symbol}")
+                
+                # Log to database for debug page
+                if db_session:
+                    try:
+                        from app.models.models import TradingLog
+                        error_log = TradingLog(
+                            level="ERROR",
+                            message=f"AI analysis failed: Could not fetch stock info for {symbol}",
+                            symbol=symbol,
+                            trade_id=None
+                        )
+                        db_session.add(error_log)
+                        db_session.commit()
+                    except Exception as db_error:
+                        logger.error(f"Failed to log AI error to database: {db_error}")
+                
                 return None
             
             # Get historical data for context

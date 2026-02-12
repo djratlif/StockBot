@@ -37,7 +37,7 @@ class AlphaVantageService:
         self.daily_call_limit = 25  # Free tier limit
         self.call_reset_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
-    async def _wait_for_rate_limit(self):
+    async def _wait_for_rate_limit(self, db_session=None):
         """Ensure we don't exceed rate limits"""
         current_time = time.time()
         time_since_last_call = current_time - self.last_api_call
@@ -45,6 +45,34 @@ class AlphaVantageService:
         if time_since_last_call < self.min_call_interval:
             sleep_time = self.min_call_interval - time_since_last_call
             logger.info(f"Rate limiting: waiting {sleep_time:.1f} seconds")
+            
+            # Log rate limiting to database for debug page and activity feed
+            if db_session:
+                try:
+                    from app.models.models import TradingLog, ActivityLog
+                    import pytz
+                    
+                    # Log to TradingLog for debug page
+                    rate_limit_log = TradingLog(
+                        level="WARNING",
+                        message=f"Alpha Vantage rate limiting: waiting {sleep_time:.1f} seconds (API call {self.daily_call_count}/{self.daily_call_limit})",
+                        symbol=None,
+                        trade_id=None
+                    )
+                    db_session.add(rate_limit_log)
+                    
+                    # Also log to ActivityLog for dashboard visibility
+                    est = pytz.timezone('US/Eastern')
+                    activity_log = ActivityLog(
+                        action="API_RATE_LIMIT",
+                        details=f"Alpha Vantage API rate limit hit - waiting {sleep_time:.1f}s before next request (call {self.daily_call_count}/{self.daily_call_limit})",
+                        timestamp=datetime.now(est)
+                    )
+                    db_session.add(activity_log)
+                    db_session.commit()
+                except Exception as e:
+                    logger.error(f"Failed to log rate limit to database: {e}")
+            
             await asyncio.sleep(sleep_time)
         
         # Reset daily counter if needed
@@ -54,7 +82,24 @@ class AlphaVantageService:
         
         # Check daily limit
         if self.daily_call_count >= self.daily_call_limit:
-            logger.error(f"Daily API call limit reached ({self.daily_call_limit})")
+            error_msg = f"Daily API call limit reached ({self.daily_call_limit})"
+            logger.error(error_msg)
+            
+            # Log API limit reached to database
+            if db_session:
+                try:
+                    from app.models.models import TradingLog
+                    limit_log = TradingLog(
+                        level="ERROR",
+                        message=f"Alpha Vantage daily API limit reached: {self.daily_call_limit} calls used",
+                        symbol=None,
+                        trade_id=None
+                    )
+                    db_session.add(limit_log)
+                    db_session.commit()
+                except Exception as e:
+                    logger.error(f"Failed to log API limit to database: {e}")
+            
             raise Exception("Alpha Vantage daily API limit reached")
         
         self.last_api_call = current_time
@@ -80,7 +125,7 @@ class AlphaVantageService:
             'timestamp': time.time()
         }
 
-    async def get_stock_info(self, symbol: str) -> Optional[StockInfo]:
+    async def get_stock_info(self, symbol: str, db_session=None) -> Optional[StockInfo]:
         """Get comprehensive stock information with caching"""
         try:
             cache_key = self._get_cache_key(symbol, 'stock_info')
@@ -91,7 +136,7 @@ class AlphaVantageService:
                 return self.cache[cache_key]['data']
             
             # Make API call
-            await self._wait_for_rate_limit()
+            await self._wait_for_rate_limit(db_session)
             logger.info(f"Fetching stock info for {symbol} from Alpha Vantage")
             
             # Get intraday data for current price
@@ -131,7 +176,36 @@ class AlphaVantageService:
             return stock_info
             
         except Exception as e:
-            logger.error(f"Error fetching stock info for {symbol}: {str(e)}")
+            error_msg = f"Error fetching stock info for {symbol}: {str(e)}"
+            logger.error(error_msg)
+            
+            # Log API error to database for debug page and activity feed
+            if db_session:
+                try:
+                    from app.models.models import TradingLog, ActivityLog
+                    import pytz
+                    
+                    # Log to TradingLog for debug page
+                    error_log = TradingLog(
+                        level="ERROR",
+                        message=f"Alpha Vantage API error for {symbol}: {str(e)}",
+                        symbol=symbol,
+                        trade_id=None
+                    )
+                    db_session.add(error_log)
+                    
+                    # Also log to ActivityLog for dashboard visibility
+                    est = pytz.timezone('US/Eastern')
+                    activity_log = ActivityLog(
+                        action="API_ERROR",
+                        details=f"Alpha Vantage API failed for {symbol}: {str(e)[:100]}{'...' if len(str(e)) > 100 else ''}",
+                        timestamp=datetime.now(est)
+                    )
+                    db_session.add(activity_log)
+                    db_session.commit()
+                except Exception as db_error:
+                    logger.error(f"Failed to log API error to database: {db_error}")
+            
             return None
 
     async def get_current_price(self, symbol: str) -> Optional[float]:

@@ -132,7 +132,8 @@ class TradingBotService:
                             current_holdings=current_holdings,
                             portfolio_value=portfolio.total_value,
                             risk_tolerance=config.risk_tolerance,
-                            max_position_size=config.max_position_size
+                            max_position_size=config.max_position_size,
+                            db_session=db
                         ),
                         timeout=30.0  # 30 second timeout per stock
                     )
@@ -142,9 +143,35 @@ class TradingBotService:
                         
                 except asyncio.TimeoutError:
                     logger.warning(f"Timeout analyzing {symbol} - skipping")
+                    
+                    # Log timeout to activity feed
+                    try:
+                        activity = ActivityLog(
+                            action="ANALYSIS_TIMEOUT",
+                            details=f"Stock analysis timeout for {symbol} after 30 seconds - API rate limits may be causing delays",
+                            timestamp=datetime.now(self.est)
+                        )
+                        db.add(activity)
+                        db.commit()
+                    except Exception as log_error:
+                        logger.error(f"Failed to log timeout to activity: {log_error}")
+                    
                     continue
                 except Exception as e:
                     logger.warning(f"Error analyzing {symbol}: {str(e)}")
+                    
+                    # Log analysis error to activity feed
+                    try:
+                        activity = ActivityLog(
+                            action="ANALYSIS_ERROR",
+                            details=f"Failed to analyze {symbol}: {str(e)}",
+                            timestamp=datetime.now(self.est)
+                        )
+                        db.add(activity)
+                        db.commit()
+                    except Exception as log_error:
+                        logger.error(f"Failed to log analysis error to activity: {log_error}")
+                    
                     continue
             
             # Sort decisions by confidence and execute the best ones

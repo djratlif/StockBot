@@ -45,7 +45,7 @@ const ActivityFeed: React.FC = () => {
       const { logsAPI } = await import('../services/api');
       
       // Fetch real activity logs from backend
-      const response = await logsAPI.getActivityLogs(20, 24);
+      const response = await logsAPI.getActivityLogs(25, 24);
       
       if (response.success && response.data) {
         setActivities(response.data);
@@ -166,7 +166,7 @@ const ActivityFeed: React.FC = () => {
       <CardContent>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
           <Typography variant="h6">
-            📊 Bot Activity Feed
+            Bot Activity Feed
           </Typography>
           <Tooltip title="Refresh Activity">
             <IconButton onClick={fetchActivities} disabled={loading} size="small">
