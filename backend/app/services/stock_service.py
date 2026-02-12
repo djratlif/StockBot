@@ -16,7 +16,7 @@ class StockService:
         self.cache_duration = timedelta(minutes=1)  # Cache for 1 minute
         self.use_alpha_vantage = True  # Primary data source
     
-    def get_stock_info(self, symbol: str) -> Optional[StockInfo]:
+    async def get_stock_info(self, symbol: str) -> Optional[StockInfo]:
         """Get comprehensive stock information with Alpha Vantage primary, Yahoo Finance fallback"""
         try:
             # Check cache first
@@ -27,7 +27,7 @@ class StockService:
             # Try Alpha Vantage first
             if self.use_alpha_vantage:
                 try:
-                    stock_info = alpha_vantage_service.get_stock_info(symbol)
+                    stock_info = await alpha_vantage_service.get_stock_info(symbol)
                     if stock_info:
                         logger.info(f"Successfully fetched {symbol} data from Alpha Vantage")
                         self._cache_data(cache_key, stock_info)
@@ -68,7 +68,7 @@ class StockService:
             logger.error(f"Error fetching stock info for {symbol}: {str(e)}")
             return None
     
-    def get_current_price(self, symbol: str) -> Optional[float]:
+    async def get_current_price(self, symbol: str) -> Optional[float]:
         """Get current stock price with Alpha Vantage primary, Yahoo Finance fallback"""
         try:
             # Check cache first
@@ -79,7 +79,7 @@ class StockService:
             # Try Alpha Vantage first
             if self.use_alpha_vantage:
                 try:
-                    current_price = alpha_vantage_service.get_current_price(symbol)
+                    current_price = await alpha_vantage_service.get_current_price(symbol)
                     if current_price:
                         logger.info(f"Successfully fetched {symbol} price from Alpha Vantage: ${current_price}")
                         self._cache_data(cache_key, current_price)

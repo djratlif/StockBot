@@ -24,8 +24,11 @@ import {
 interface ActivityItem {
   id: number;
   timestamp: string;
-  level: 'INFO' | 'WARNING' | 'ERROR' | 'SUCCESS';
-  message: string;
+  action?: string;
+  details?: string;
+  // Legacy fields for backward compatibility
+  level?: 'INFO' | 'WARNING' | 'ERROR' | 'SUCCESS';
+  message?: string;
   symbol?: string;
   trade_id?: number;
 }
@@ -191,21 +194,21 @@ const ActivityFeed: React.FC = () => {
                   }}
                 >
                   <ListItemIcon sx={{ minWidth: 36 }}>
-                    {getActivityIcon(activity.level)}
+                    {getActivityIcon(activity.level || activity.action || 'INFO')}
                   </ListItemIcon>
                   <ListItemText
                     primary={
                       <Box display="flex" alignItems="center" gap={1}>
-                        <Typography 
-                          variant="body2" 
-                          sx={{ color: getActivityColor(activity.level) }}
+                        <Typography
+                          variant="body2"
+                          sx={{ color: getActivityColor(activity.level || activity.action || 'INFO') }}
                         >
-                          {activity.message}
+                          {activity.message || activity.details || 'No details available'}
                         </Typography>
                         {activity.symbol && (
-                          <Chip 
-                            label={activity.symbol} 
-                            size="small" 
+                          <Chip
+                            label={activity.symbol}
+                            size="small"
                             variant="outlined"
                             sx={{ height: 20, fontSize: '0.7rem' }}
                           />

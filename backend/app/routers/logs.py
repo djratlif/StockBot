@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 
 from app.models.database import get_db
-from app.models.models import TradingLog
+from app.models.models import TradingLog, ActivityLog
 from app.models.schemas import APIResponse
 
 logger = logging.getLogger(__name__)
@@ -22,9 +22,9 @@ async def get_activity_logs(
         # Get logs from the last N hours
         since = datetime.now() - timedelta(hours=hours)
         
-        logs = db.query(TradingLog).filter(
-            TradingLog.timestamp >= since
-        ).order_by(TradingLog.timestamp.desc()).limit(limit).all()
+        logs = db.query(ActivityLog).filter(
+            ActivityLog.timestamp >= since
+        ).order_by(ActivityLog.timestamp.desc()).limit(limit).all()
         
         # Convert to response format
         activity_logs = []
@@ -32,10 +32,8 @@ async def get_activity_logs(
             activity_logs.append({
                 "id": log.id,
                 "timestamp": log.timestamp.isoformat(),
-                "level": log.level,
-                "message": log.message,
-                "symbol": log.symbol,
-                "trade_id": log.trade_id
+                "action": log.action,
+                "details": log.details
             })
         
         return {
@@ -54,6 +52,48 @@ async def add_activity_log(
     db: Session = Depends(get_db)
 ):
     """Add a new activity log entry"""
+    try:
+        # Extract data from request
+        action = log_data.get("action")
+        details = log_data.get("details")
+        
+        if not action or not details:
+            raise HTTPException(status_code=400, detail="Both 'action' and 'details' are required")
+        
+        # Create activity log entry
+        from datetime import datetime
+        import pytz
+        
+        est = pytz.timezone('US/Eastern')
+        log_entry = ActivityLog(
+            action=action,
+            details=details,
+            timestamp=datetime.now(est)
+        )
+        
+        db.add(log_entry)
+        db.commit()
+        db.refresh(log_entry)
+        
+        return APIResponse(
+            success=True,
+            message="Activity log added successfully",
+            data={"log_id": log_entry.id}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding activity log: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/trading")
+async def add_trading_log(
+    log_data: dict,
+    db: Session = Depends(get_db)
+):
+    """Add a new trading log entry"""
     try:
         # Extract data from request
         level = log_data.get("level")
@@ -80,14 +120,14 @@ async def add_activity_log(
         
         return APIResponse(
             success=True,
-            message="Activity log added successfully",
+            message="Trading log added successfully",
             data={"log_id": log_entry.id}
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error adding activity log: {str(e)}")
+        logger.error(f"Error adding trading log: {str(e)}")
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -122,15 +162,21 @@ async def get_debug_info(
     db: Session = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=200, description="Number of logs to return")
 ):
-    """Get comprehensive debug information including errors and API calls"""
+    """Get comprehensive debug information including recent activity and trading logs"""
     try:
-        # Get all logs including errors
-        logs = db.query(TradingLog).order_by(
+        # Get recent activity logs
+        activity_logs = db.query(ActivityLog).order_by(
+            ActivityLog.timestamp.desc()
+        ).limit(limit//2).all()
+        
+        # Get trading logs (if any)
+        trading_logs = db.query(TradingLog).order_by(
             TradingLog.timestamp.desc()
-        ).limit(limit).all()
+        ).limit(limit//2).all()
         
         # Categorize logs
         debug_info = {
+            "recent_activity": [],
             "errors": [],
             "warnings": [],
             "info": [],
@@ -138,14 +184,27 @@ async def get_debug_info(
             "trades": []
         }
         
-        for log in logs:
+        # Process activity logs
+        for log in activity_logs:
+            activity_data = {
+                "id": log.id,
+                "timestamp": log.timestamp.isoformat(),
+                "action": log.action,
+                "details": log.details,
+                "type": "activity"
+            }
+            debug_info["recent_activity"].append(activity_data)
+        
+        # Process trading logs
+        for log in trading_logs:
             log_data = {
                 "id": log.id,
                 "timestamp": log.timestamp.isoformat(),
                 "level": log.level,
                 "message": log.message,
                 "symbol": log.symbol,
-                "trade_id": log.trade_id
+                "trade_id": log.trade_id,
+                "type": "trading"
             }
             
             if log.level == "ERROR":
@@ -165,7 +224,8 @@ async def get_debug_info(
         
         # Add summary statistics
         debug_info["summary"] = {
-            "total_logs": len(logs),
+            "total_activity_logs": len(activity_logs),
+            "total_trading_logs": len(trading_logs),
             "error_count": len(debug_info["errors"]),
             "warning_count": len(debug_info["warnings"]),
             "info_count": len(debug_info["info"]),

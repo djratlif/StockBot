@@ -6,12 +6,13 @@ from typing import Dict, List
 from app.models.database import get_db
 from app.models.models import BotConfig
 from app.models.schemas import (
-    BotConfigResponse, BotConfigUpdate, BotStatus, 
-    APIResponse, TradingDecision
+    BotConfigResponse, BotConfigUpdate, BotStatus,
+    APIResponse, TradingDecision, TradingIntervalConfig
 )
 from app.services.portfolio_service import portfolio_service
 from app.services.stock_service import stock_service
 from app.services.ai_service import ai_service
+from app.services.trading_bot_service import trading_bot_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -22,14 +23,24 @@ async def get_bot_config(db: Session = Depends(get_db)):
     try:
         config = db.query(BotConfig).first()
         if not config:
-            raise HTTPException(status_code=404, detail="Bot configuration not found")
+            # Create default configuration if none exists
+            config = BotConfig(
+                max_daily_trades=5,
+                max_position_size=0.20,
+                risk_tolerance="MEDIUM",
+                is_active=False
+            )
+            db.add(config)
+            db.commit()
+            db.refresh(config)
+            logger.info("Created default bot configuration")
         
         return BotConfigResponse.from_orm(config)
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting bot config: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.put("/config", response_model=BotConfigResponse)
 async def update_bot_config(
@@ -64,11 +75,22 @@ async def get_bot_status(db: Session = Depends(get_db)):
     try:
         config = db.query(BotConfig).first()
         if not config:
-            raise HTTPException(status_code=404, detail="Bot configuration not found")
+            # Create default configuration if none exists
+            config = BotConfig(
+                max_daily_trades=5,
+                max_position_size=0.20,
+                risk_tolerance="MEDIUM",
+                is_active=False
+            )
+            db.add(config)
+            db.commit()
+            db.refresh(config)
+            logger.info("Created default bot configuration")
         
         portfolio = portfolio_service.get_portfolio(db)
         if not portfolio:
-            raise HTTPException(status_code=404, detail="Portfolio not found")
+            # Initialize portfolio if it doesn't exist
+            portfolio = portfolio_service.initialize_portfolio(db)
         
         # Get market status
         market_status = stock_service.get_market_status()
@@ -80,6 +102,16 @@ async def get_bot_status(db: Session = Depends(get_db)):
         from app.models.models import Trades
         last_trade = db.query(Trades).order_by(Trades.executed_at.desc()).first()
         
+        # Get continuous trading status safely
+        try:
+            bot_service_status = trading_bot_service.get_status()
+            continuous_trading = bot_service_status["is_running"]
+            trading_interval_minutes = bot_service_status["trading_interval_minutes"]
+        except Exception as e:
+            logger.warning(f"Could not get trading bot service status: {str(e)}")
+            continuous_trading = False
+            trading_interval_minutes = 5
+        
         return BotStatus(
             is_active=config.is_active,
             is_trading_hours=market_status.get("is_open", False),
@@ -87,21 +119,33 @@ async def get_bot_status(db: Session = Depends(get_db)):
             max_daily_trades=config.max_daily_trades,
             cash_available=portfolio.cash_balance,
             portfolio_value=portfolio.total_value,
-            last_trade_time=last_trade.executed_at if last_trade else None
+            last_trade_time=last_trade.executed_at if last_trade else None,
+            continuous_trading=continuous_trading,
+            trading_interval_minutes=trading_interval_minutes
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting bot status: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/start", response_model=APIResponse)
 async def start_bot(db: Session = Depends(get_db)):
-    """Start the trading bot"""
+    """Start the trading bot with continuous trading"""
     try:
         config = db.query(BotConfig).first()
         if not config:
-            raise HTTPException(status_code=404, detail="Bot configuration not found")
+            # Create default configuration if none exists
+            config = BotConfig(
+                max_daily_trades=5,
+                max_position_size=0.20,
+                risk_tolerance="MEDIUM",
+                is_active=False
+            )
+            db.add(config)
+            db.commit()
+            db.refresh(config)
+            logger.info("Created default bot configuration")
         
         config.is_active = True
         db.commit()
@@ -114,7 +158,7 @@ async def start_bot(db: Session = Depends(get_db)):
         est = pytz.timezone('US/Eastern')
         activity = ActivityLog(
             action="BOT_STARTED",
-            details="Trading bot has been activated and is monitoring the market",
+            details="Trading bot has been activated and is ready for continuous trading",
             timestamp=datetime.now(est)
         )
         db.add(activity)
@@ -122,55 +166,36 @@ async def start_bot(db: Session = Depends(get_db)):
         
         logger.info("Trading bot started")
         
-        # Perform initial market analysis
+        # Start continuous trading in background
         try:
-            from app.services.stock_service import stock_service
-            market_status = stock_service.get_market_status()
-            
-            # Log market status
-            market_activity = ActivityLog(
-                action="MARKET_CHECK",
-                details=f"Market is {'OPEN' if market_status.get('is_open', False) else 'CLOSED'}. Bot is ready to trade when market opens.",
-                timestamp=datetime.now(est)
-            )
-            db.add(market_activity)
-            
-            # If market is open, analyze some trending stocks
-            if market_status.get('is_open', False):
-                trending_stocks = stock_service.get_trending_stocks()[:3]  # Get top 3
-                for symbol in trending_stocks:
-                    try:
-                        price = stock_service.get_current_price(symbol)
-                        if price:
-                            trend_activity = ActivityLog(
-                                action="STOCK_ANALYSIS",
-                                details=f"Monitoring {symbol} at ${price:.2f}",
-                                timestamp=datetime.now(est)
-                            )
-                            db.add(trend_activity)
-                    except Exception as e:
-                        logger.warning(f"Could not analyze {symbol}: {str(e)}")
-            
-            db.commit()
-            
+            await trading_bot_service.start_continuous_trading()
+            continuous_trading_started = True
         except Exception as e:
-            logger.warning(f"Could not perform initial analysis: {str(e)}")
+            logger.warning(f"Could not start continuous trading: {str(e)}")
+            continuous_trading_started = False
+        
+        # Get trading bot status
+        bot_status = trading_bot_service.get_status()
         
         return APIResponse(
             success=True,
-            message="Trading bot started successfully and is monitoring the market",
-            data={"is_active": True}
+            message="Trading bot started successfully" + (" with continuous trading" if continuous_trading_started else ""),
+            data={
+                "is_active": True,
+                "continuous_trading": continuous_trading_started,
+                "trading_interval_minutes": bot_status["trading_interval_minutes"]
+            }
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error starting bot: {str(e)}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/stop", response_model=APIResponse)
 async def stop_bot(db: Session = Depends(get_db)):
-    """Stop the trading bot"""
+    """Stop the trading bot and continuous trading"""
     try:
         config = db.query(BotConfig).first()
         if not config:
@@ -178,6 +203,9 @@ async def stop_bot(db: Session = Depends(get_db)):
         
         config.is_active = False
         db.commit()
+        
+        # Stop continuous trading
+        await trading_bot_service.stop_continuous_trading()
         
         # Add activity log entry
         from app.models.models import ActivityLog
@@ -187,7 +215,7 @@ async def stop_bot(db: Session = Depends(get_db)):
         est = pytz.timezone('US/Eastern')
         activity = ActivityLog(
             action="BOT_STOPPED",
-            details="Trading bot has been deactivated and is no longer monitoring the market",
+            details="Trading bot has been deactivated and continuous trading has been stopped",
             timestamp=datetime.now(est)
         )
         db.add(activity)
@@ -197,7 +225,7 @@ async def stop_bot(db: Session = Depends(get_db)):
         return APIResponse(
             success=True,
             message="Trading bot stopped successfully",
-            data={"is_active": False}
+            data={"is_active": False, "continuous_trading": False}
         )
     except HTTPException:
         raise
@@ -353,4 +381,117 @@ async def get_market_sentiment():
         )
     except Exception as e:
         logger.error(f"Error getting market sentiment: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/start-simple", response_model=APIResponse)
+async def start_bot_simple(db: Session = Depends(get_db)):
+    """Start the trading bot without continuous trading (for testing)"""
+    try:
+        config = db.query(BotConfig).first()
+        if not config:
+            # Create default configuration if none exists
+            config = BotConfig(
+                max_daily_trades=5,
+                max_position_size=0.20,
+                risk_tolerance="MEDIUM",
+                is_active=False
+            )
+            db.add(config)
+            db.commit()
+            db.refresh(config)
+            logger.info("Created default bot configuration")
+        
+        config.is_active = True
+        db.commit()
+        
+        # Add activity log entry
+        from app.models.models import ActivityLog
+        from datetime import datetime
+        import pytz
+        
+        est = pytz.timezone('US/Eastern')
+        activity = ActivityLog(
+            action="BOT_STARTED",
+            details="Trading bot has been activated (simple mode - no continuous trading)",
+            timestamp=datetime.now(est)
+        )
+        db.add(activity)
+        db.commit()
+        
+        logger.info("Trading bot started in simple mode")
+        
+        return APIResponse(
+            success=True,
+            message="Trading bot started successfully in simple mode",
+            data={
+                "is_active": True,
+                "continuous_trading": False,
+                "mode": "simple"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting bot in simple mode: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.post("/trading-interval", response_model=APIResponse)
+async def set_trading_interval(
+    interval_config: TradingIntervalConfig,
+    db: Session = Depends(get_db)
+):
+    """Set the trading interval for continuous trading"""
+    try:
+        # Check if bot configuration exists
+        config = db.query(BotConfig).first()
+        if not config:
+            raise HTTPException(status_code=404, detail="Bot configuration not found")
+        
+        # Set the trading interval
+        trading_bot_service.set_trading_interval(interval_config.interval_minutes)
+        
+        # Add activity log entry
+        from app.models.models import ActivityLog
+        from datetime import datetime
+        import pytz
+        
+        est = pytz.timezone('US/Eastern')
+        activity = ActivityLog(
+            action="TRADING_INTERVAL_UPDATED",
+            details=f"Trading interval updated to {interval_config.interval_minutes} minutes",
+            timestamp=datetime.now(est)
+        )
+        db.add(activity)
+        db.commit()
+        
+        logger.info(f"Trading interval updated to {interval_config.interval_minutes} minutes")
+        
+        return APIResponse(
+            success=True,
+            message=f"Trading interval updated to {interval_config.interval_minutes} minutes",
+            data={
+                "interval_minutes": interval_config.interval_minutes,
+                "is_running": trading_bot_service.get_status()["is_running"]
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting trading interval: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/trading-status", response_model=APIResponse)
+async def get_trading_status():
+    """Get detailed continuous trading status"""
+    try:
+        status = trading_bot_service.get_status()
+        
+        return APIResponse(
+            success=True,
+            message="Trading status retrieved successfully",
+            data=status
+        )
+    except Exception as e:
+        logger.error(f"Error getting trading status: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")

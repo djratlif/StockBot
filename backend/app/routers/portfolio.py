@@ -30,14 +30,21 @@ async def get_portfolio(db: Session = Depends(get_db)):
 async def get_portfolio_summary(db: Session = Depends(get_db)):
     """Get comprehensive portfolio summary with returns and statistics"""
     try:
+        # Check if portfolio exists, create if not
+        portfolio = portfolio_service.get_portfolio(db)
+        if not portfolio:
+            portfolio = portfolio_service.initialize_portfolio(db)
+        
         summary = portfolio_service.get_portfolio_summary(db)
         if not summary:
             raise HTTPException(status_code=404, detail="Portfolio not found")
         
         return summary
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting portfolio summary: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/holdings", response_model=List[HoldingResponse])
 async def get_holdings(db: Session = Depends(get_db)):

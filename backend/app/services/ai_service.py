@@ -15,7 +15,7 @@ class AITradingService:
         openai.api_key = settings.openai_api_key
         self.model = "gpt-4"
         
-    def analyze_stock_for_trading(self, 
+    async def analyze_stock_for_trading(self,
                                 symbol: str,
                                 portfolio_cash: float,
                                 current_holdings: Dict,
@@ -27,7 +27,7 @@ class AITradingService:
         """
         try:
             # Get current stock information
-            stock_info = stock_service.get_stock_info(symbol)
+            stock_info = await stock_service.get_stock_info(symbol)
             if not stock_info:
                 logger.error(f"Could not fetch stock info for {symbol}")
                 return None

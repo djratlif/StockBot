@@ -2,6 +2,7 @@ import os
 import logging
 import json
 import time
+import asyncio
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 from alpha_vantage.timeseries import TimeSeries
@@ -36,7 +37,7 @@ class AlphaVantageService:
         self.daily_call_limit = 25  # Free tier limit
         self.call_reset_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
-    def _wait_for_rate_limit(self):
+    async def _wait_for_rate_limit(self):
         """Ensure we don't exceed rate limits"""
         current_time = time.time()
         time_since_last_call = current_time - self.last_api_call
@@ -44,7 +45,7 @@ class AlphaVantageService:
         if time_since_last_call < self.min_call_interval:
             sleep_time = self.min_call_interval - time_since_last_call
             logger.info(f"Rate limiting: waiting {sleep_time:.1f} seconds")
-            time.sleep(sleep_time)
+            await asyncio.sleep(sleep_time)
         
         # Reset daily counter if needed
         if datetime.now() >= self.call_reset_time:
@@ -79,7 +80,7 @@ class AlphaVantageService:
             'timestamp': time.time()
         }
 
-    def get_stock_info(self, symbol: str) -> Optional[StockInfo]:
+    async def get_stock_info(self, symbol: str) -> Optional[StockInfo]:
         """Get comprehensive stock information with caching"""
         try:
             cache_key = self._get_cache_key(symbol, 'stock_info')
@@ -90,7 +91,7 @@ class AlphaVantageService:
                 return self.cache[cache_key]['data']
             
             # Make API call
-            self._wait_for_rate_limit()
+            await self._wait_for_rate_limit()
             logger.info(f"Fetching stock info for {symbol} from Alpha Vantage")
             
             # Get intraday data for current price
@@ -133,7 +134,7 @@ class AlphaVantageService:
             logger.error(f"Error fetching stock info for {symbol}: {str(e)}")
             return None
 
-    def get_current_price(self, symbol: str) -> Optional[float]:
+    async def get_current_price(self, symbol: str) -> Optional[float]:
         """Get current stock price with caching"""
         try:
             cache_key = self._get_cache_key(symbol, 'current_price')
@@ -144,7 +145,7 @@ class AlphaVantageService:
                 return self.cache[cache_key]['data']
             
             # Make API call
-            self._wait_for_rate_limit()
+            await self._wait_for_rate_limit()
             logger.info(f"Fetching current price for {symbol} from Alpha Vantage")
             
             # Get quote data
@@ -165,7 +166,7 @@ class AlphaVantageService:
             logger.error(f"Error fetching current price for {symbol}: {str(e)}")
             return None
 
-    def get_historical_data(self, symbol: str, period: str = "1mo"):
+    async def get_historical_data(self, symbol: str, period: str = "1mo"):
         """Get historical stock data with caching"""
         try:
             cache_key = self._get_cache_key(symbol, f'historical_{period}')
@@ -176,7 +177,7 @@ class AlphaVantageService:
                 return self.cache[cache_key]['data']
             
             # Make API call
-            self._wait_for_rate_limit()
+            await self._wait_for_rate_limit()
             logger.info(f"Fetching historical data for {symbol} from Alpha Vantage")
             
             # Get daily data
@@ -202,10 +203,10 @@ class AlphaVantageService:
         logger.info("Using predefined trending stocks list to conserve API calls")
         return trending
 
-    def validate_symbol(self, symbol: str) -> bool:
+    async def validate_symbol(self, symbol: str) -> bool:
         """Validate if a stock symbol exists"""
         try:
-            price = self.get_current_price(symbol)
+            price = await self.get_current_price(symbol)
             return price is not None
         except Exception:
             return False

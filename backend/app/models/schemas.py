@@ -184,3 +184,9 @@ class BotStatus(BaseModel):
     cash_available: float
     portfolio_value: float
     last_trade_time: Optional[datetime] = None
+    continuous_trading: Optional[bool] = False
+    trading_interval_minutes: Optional[int] = 5
+
+# Trading Interval Configuration Schema
+class TradingIntervalConfig(BaseModel):
+    interval_minutes: int = Field(..., ge=1, le=60, description="Trading interval in minutes (1-60)")
