@@ -31,6 +31,7 @@ class User(Base):
     holdings = relationship("Holdings", back_populates="user")
     trades = relationship("Trades", back_populates="user")
     bot_config = relationship("BotConfig", back_populates="user", uselist=False)
+    portfolio_snapshots = relationship("PortfolioSnapshot", back_populates="user")
 
 class Portfolio(Base):
     __tablename__ = "portfolio"
@@ -122,3 +123,36 @@ class ActivityLog(Base):
     action = Column(String(50), nullable=False)  # BOT_STARTED, BOT_STOPPED, MARKET_CHECK, etc.
     details = Column(Text, nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+class PortfolioSnapshot(Base):
+    __tablename__ = "portfolio_snapshots"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    cash_balance = Column(Float, nullable=False)
+    total_value = Column(Float, nullable=False)
+    total_return = Column(Float, nullable=False, default=0.0)  # Total return in dollars
+    total_return_percent = Column(Float, nullable=False, default=0.0)  # Total return as percentage
+    holdings_count = Column(Integer, nullable=False, default=0)  # Number of different stocks held
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="portfolio_snapshots")
+    holdings_snapshots = relationship("HoldingSnapshot", back_populates="portfolio_snapshot", cascade="all, delete-orphan")
+
+class HoldingSnapshot(Base):
+    __tablename__ = "holding_snapshots"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    portfolio_snapshot_id = Column(Integer, ForeignKey("portfolio_snapshots.id"), nullable=False)
+    symbol = Column(String(10), nullable=False, index=True)
+    quantity = Column(Integer, nullable=False)
+    average_cost = Column(Float, nullable=False)
+    current_price = Column(Float, nullable=False)
+    market_value = Column(Float, nullable=False)  # quantity * current_price
+    unrealized_gain_loss = Column(Float, nullable=False)  # (current_price - average_cost) * quantity
+    unrealized_gain_loss_percent = Column(Float, nullable=False)  # ((current_price - average_cost) / average_cost) * 100
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    portfolio_snapshot = relationship("PortfolioSnapshot", back_populates="holdings_snapshots")

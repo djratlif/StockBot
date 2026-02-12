@@ -190,3 +190,48 @@ class BotStatus(BaseModel):
 # Trading Interval Configuration Schema
 class TradingIntervalConfig(BaseModel):
     interval_minutes: int = Field(..., ge=1, le=60, description="Trading interval in minutes (1-60)")
+
+# Portfolio Snapshot Schemas
+class HoldingSnapshotResponse(BaseModel):
+    id: int
+    symbol: str
+    quantity: int
+    average_cost: float
+    current_price: float
+    market_value: float
+    unrealized_gain_loss: float
+    unrealized_gain_loss_percent: float
+    timestamp: datetime
+    
+    class Config:
+        from_attributes = True
+
+class PortfolioSnapshotResponse(BaseModel):
+    id: int
+    cash_balance: float
+    total_value: float
+    total_return: float
+    total_return_percent: float
+    holdings_count: int
+    timestamp: datetime
+    holdings_snapshots: List[HoldingSnapshotResponse] = []
+    
+    class Config:
+        from_attributes = True
+
+class PortfolioHistoryResponse(BaseModel):
+    snapshots: List[PortfolioSnapshotResponse]
+    total_snapshots: int
+    date_range: dict  # {"start": datetime, "end": datetime}
+    
+class ChartDataPoint(BaseModel):
+    timestamp: datetime
+    total_value: float
+    cash_balance: float
+    total_return: float
+    total_return_percent: float
+
+class PortfolioChartData(BaseModel):
+    data_points: List[ChartDataPoint]
+    holdings_breakdown: List[dict]  # Current holdings breakdown for pie chart
+    performance_metrics: dict  # Summary metrics for the chart

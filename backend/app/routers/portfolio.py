@@ -5,8 +5,9 @@ import logging
 
 from app.models.database import get_db
 from app.models.schemas import (
-    PortfolioResponse, PortfolioSummary, HoldingResponse, 
-    TradingStats, APIResponse
+    PortfolioResponse, PortfolioSummary, HoldingResponse,
+    TradingStats, APIResponse, PortfolioHistoryResponse,
+    PortfolioChartData, PortfolioSnapshotResponse
 )
 from app.services.portfolio_service import portfolio_service
 
@@ -50,7 +51,7 @@ async def get_portfolio_summary(db: Session = Depends(get_db)):
 async def get_holdings(db: Session = Depends(get_db)):
     """Get all current stock holdings"""
     try:
-        holdings = portfolio_service.get_holdings(db)
+        holdings = await portfolio_service.get_holdings(db)
         return holdings
     except Exception as e:
         logger.error(f"Error getting holdings: {str(e)}")
@@ -81,4 +82,45 @@ async def initialize_portfolio(db: Session = Depends(get_db)):
         )
     except Exception as e:
         logger.error(f"Error initializing portfolio: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/history", response_model=PortfolioHistoryResponse)
+async def get_portfolio_history(
+    days: int = 7,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """Get portfolio historical snapshots for charting"""
+    try:
+        history = portfolio_service.get_portfolio_history(db, days=days, limit=limit)
+        return history
+    except Exception as e:
+        logger.error(f"Error getting portfolio history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/chart-data", response_model=PortfolioChartData)
+async def get_portfolio_chart_data(
+    days: int = 7,
+    db: Session = Depends(get_db)
+):
+    """Get portfolio data formatted for Plotly charts"""
+    try:
+        chart_data = portfolio_service.get_portfolio_chart_data(db, days=days)
+        return chart_data
+    except Exception as e:
+        logger.error(f"Error getting portfolio chart data: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/snapshot", response_model=APIResponse)
+async def create_portfolio_snapshot(db: Session = Depends(get_db)):
+    """Manually create a portfolio snapshot (for testing)"""
+    try:
+        snapshot = await portfolio_service.create_portfolio_snapshot(db)
+        return APIResponse(
+            success=True,
+            message="Portfolio snapshot created successfully",
+            data={"snapshot_id": snapshot.id, "timestamp": snapshot.timestamp.isoformat()}
+        )
+    except Exception as e:
+        logger.error(f"Error creating portfolio snapshot: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")

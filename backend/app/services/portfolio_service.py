@@ -2,10 +2,11 @@ from sqlalchemy.orm import Session
 from typing import Dict, List, Optional, Tuple
 import logging
 from datetime import datetime, date
-from app.models.models import Portfolio, Holdings, Trades, BotConfig, TradeAction
+from app.models.models import Portfolio, Holdings, Trades, BotConfig, TradeAction, PortfolioSnapshot, HoldingSnapshot
 from app.models.schemas import (
-    PortfolioSummary, TradingStats, TradeCreate, TradingDecision, 
-    TradeActionEnum, HoldingResponse, TradeResponse
+    PortfolioSummary, TradingStats, TradeCreate, TradingDecision,
+    TradeActionEnum, HoldingResponse, TradeResponse, PortfolioHistoryResponse,
+    PortfolioChartData, ChartDataPoint, PortfolioSnapshotResponse, HoldingSnapshotResponse
 )
 from app.services.stock_service import stock_service
 from app.config import settings
@@ -90,7 +91,7 @@ class PortfolioService:
             logger.error(f"Error getting portfolio summary: {str(e)}")
             return None
     
-    def get_holdings(self, db: Session) -> List[HoldingResponse]:
+    async def get_holdings(self, db: Session) -> List[HoldingResponse]:
         """Get all current holdings with updated prices"""
         try:
             holdings = db.query(Holdings).all()
@@ -98,7 +99,7 @@ class PortfolioService:
             
             for holding in holdings:
                 # Update current price
-                current_price = stock_service.get_current_price(holding.symbol)
+                current_price = await stock_service.get_current_price(holding.symbol)
                 if current_price:
                     holding.current_price = current_price
                     db.commit()
@@ -349,6 +350,185 @@ class PortfolioService:
         """Check if we can make another trade today"""
         trades_today = self.get_trades_today(db)
         return trades_today < max_daily_trades
+    
+    async def create_portfolio_snapshot(self, db: Session) -> PortfolioSnapshot:
+        """Create a snapshot of the current portfolio state"""
+        try:
+            # Get current portfolio
+            portfolio = self.get_portfolio(db)
+            if not portfolio:
+                portfolio = self.initialize_portfolio(db)
+            
+            # Get current portfolio summary
+            summary = await self.get_portfolio_summary(db)
+            if not summary:
+                raise Exception("Could not get portfolio summary")
+            
+            # Create portfolio snapshot
+            snapshot = PortfolioSnapshot(
+                user_id=1,  # Default user for now
+                cash_balance=summary.cash_balance,
+                total_value=summary.total_value,
+                total_return=summary.total_return,
+                total_return_percent=summary.return_percentage,
+                holdings_count=summary.holdings_count
+            )
+            db.add(snapshot)
+            db.flush()  # Get the ID
+            
+            # Create holding snapshots
+            holdings = db.query(Holdings).all()
+            for holding in holdings:
+                # Get current price
+                current_price = await stock_service.get_current_price(holding.symbol)
+                if current_price is None:
+                    current_price = holding.current_price
+                
+                market_value = holding.quantity * current_price
+                unrealized_gain_loss = (current_price - holding.average_cost) * holding.quantity
+                unrealized_gain_loss_percent = ((current_price - holding.average_cost) / holding.average_cost) * 100 if holding.average_cost > 0 else 0
+                
+                holding_snapshot = HoldingSnapshot(
+                    portfolio_snapshot_id=snapshot.id,
+                    symbol=holding.symbol,
+                    quantity=holding.quantity,
+                    average_cost=holding.average_cost,
+                    current_price=current_price,
+                    market_value=market_value,
+                    unrealized_gain_loss=unrealized_gain_loss,
+                    unrealized_gain_loss_percent=unrealized_gain_loss_percent
+                )
+                db.add(holding_snapshot)
+            
+            db.commit()
+            db.refresh(snapshot)
+            
+            logger.info(f"Portfolio snapshot created: ${snapshot.total_value:.2f} total value")
+            return snapshot
+            
+        except Exception as e:
+            logger.error(f"Error creating portfolio snapshot: {str(e)}")
+            db.rollback()
+            raise
+    
+    def get_portfolio_history(self, db: Session, days: int = 7, limit: int = 100) -> PortfolioHistoryResponse:
+        """Get portfolio historical snapshots"""
+        try:
+            from datetime import timedelta
+            
+            # Calculate date range
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+            
+            # Query snapshots
+            snapshots = db.query(PortfolioSnapshot).filter(
+                PortfolioSnapshot.timestamp >= start_date
+            ).order_by(PortfolioSnapshot.timestamp.desc()).limit(limit).all()
+            
+            # Convert to response format
+            snapshot_responses = []
+            for snapshot in snapshots:
+                holding_snapshots = [
+                    HoldingSnapshotResponse.from_orm(hs)
+                    for hs in snapshot.holdings_snapshots
+                ]
+                
+                snapshot_response = PortfolioSnapshotResponse(
+                    id=snapshot.id,
+                    cash_balance=snapshot.cash_balance,
+                    total_value=snapshot.total_value,
+                    total_return=snapshot.total_return,
+                    total_return_percent=snapshot.total_return_percent,
+                    holdings_count=snapshot.holdings_count,
+                    timestamp=snapshot.timestamp,
+                    holdings_snapshots=holding_snapshots
+                )
+                snapshot_responses.append(snapshot_response)
+            
+            return PortfolioHistoryResponse(
+                snapshots=snapshot_responses,
+                total_snapshots=len(snapshot_responses),
+                date_range={
+                    "start": start_date,
+                    "end": end_date
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"Error getting portfolio history: {str(e)}")
+            return PortfolioHistoryResponse(
+                snapshots=[],
+                total_snapshots=0,
+                date_range={"start": datetime.now(), "end": datetime.now()}
+            )
+    
+    def get_portfolio_chart_data(self, db: Session, days: int = 7) -> PortfolioChartData:
+        """Get portfolio data formatted for Plotly charts"""
+        try:
+            from datetime import timedelta
+            
+            # Get historical snapshots
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+            
+            snapshots = db.query(PortfolioSnapshot).filter(
+                PortfolioSnapshot.timestamp >= start_date
+            ).order_by(PortfolioSnapshot.timestamp.asc()).all()
+            
+            # Convert to chart data points
+            data_points = []
+            for snapshot in snapshots:
+                data_point = ChartDataPoint(
+                    timestamp=snapshot.timestamp,
+                    total_value=snapshot.total_value,
+                    cash_balance=snapshot.cash_balance,
+                    total_return=snapshot.total_return,
+                    total_return_percent=snapshot.total_return_percent
+                )
+                data_points.append(data_point)
+            
+            # Get current holdings breakdown for pie chart
+            holdings = db.query(Holdings).all()
+            holdings_breakdown = []
+            for holding in holdings:
+                market_value = holding.quantity * holding.current_price
+                holdings_breakdown.append({
+                    "symbol": holding.symbol,
+                    "quantity": holding.quantity,
+                    "market_value": market_value,
+                    "percentage": 0  # Will be calculated on frontend
+                })
+            
+            # Calculate performance metrics
+            if len(data_points) >= 2:
+                first_value = data_points[0].total_value
+                last_value = data_points[-1].total_value
+                total_change = last_value - first_value
+                total_change_percent = (total_change / first_value) * 100 if first_value > 0 else 0
+            else:
+                total_change = 0
+                total_change_percent = 0
+            
+            performance_metrics = {
+                "period_days": days,
+                "total_change": total_change,
+                "total_change_percent": total_change_percent,
+                "data_points_count": len(data_points)
+            }
+            
+            return PortfolioChartData(
+                data_points=data_points,
+                holdings_breakdown=holdings_breakdown,
+                performance_metrics=performance_metrics
+            )
+            
+        except Exception as e:
+            logger.error(f"Error getting portfolio chart data: {str(e)}")
+            return PortfolioChartData(
+                data_points=[],
+                holdings_breakdown=[],
+                performance_metrics={"period_days": days, "total_change": 0, "total_change_percent": 0, "data_points_count": 0}
+            )
 
 # Global instance
 portfolio_service = PortfolioService()

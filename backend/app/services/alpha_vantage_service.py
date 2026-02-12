@@ -27,7 +27,7 @@ class AlphaVantageService:
         
         # Smart caching to minimize API calls
         self.cache = {}
-        self.cache_duration = 300  # 5 minutes for real-time data
+        self.cache_duration = 60  # 1 minute for real-time data (faster updates for portfolio tracking)
         self.daily_cache_duration = 3600  # 1 hour for daily data
         
         # Rate limiting - Premium plan: 150 requests per minute
@@ -213,8 +213,8 @@ class AlphaVantageService:
         try:
             cache_key = self._get_cache_key(symbol, 'current_price')
             
-            # Check cache first
-            if cache_key in self.cache and self._is_cache_valid(self.cache[cache_key], self.cache_duration):
+            # Check cache first (1 minute cache for current prices)
+            if cache_key in self.cache and self._is_cache_valid(self.cache[cache_key], 60):
                 logger.info(f"Using cached price for {symbol}")
                 return self.cache[cache_key]['data']
             
@@ -222,18 +222,48 @@ class AlphaVantageService:
             await self._wait_for_rate_limit()
             logger.info(f"Fetching current price for {symbol} from Alpha Vantage")
             
-            # Get quote data
-            data, meta_data = self.ts.get_quote_endpoint(symbol=symbol)
+            # Use direct API call with TIME_SERIES_INTRADAY for more current data
+            import requests
             
-            if not data:
-                logger.error(f"No quote data returned for {symbol}")
-                return None
+            # Use real-time Alpha Vantage API with entitlement=realtime
+            # Try real-time intraday data first (most current)
+            realtime_intraday_url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={symbol}&interval=1min&entitlement=realtime&apikey={self.api_key}"
+            response = requests.get(realtime_intraday_url)
+            data = response.json()
             
-            current_price = float(data['05. price'])
+            current_price = None
+            
+            # Try to get latest real-time intraday price
+            if 'Time Series (1min)' in data:
+                time_series = data['Time Series (1min)']
+                if time_series:
+                    latest_time = sorted(time_series.keys())[-1]  # Get most recent timestamp
+                    current_price = float(time_series[latest_time]['4. close'])
+                    logger.info(f"Using real-time intraday data from {latest_time}")
+            
+            # Fallback to real-time GLOBAL_QUOTE if intraday fails
+            if current_price is None:
+                logger.warning(f"Real-time intraday data unavailable for {symbol}, falling back to real-time GLOBAL_QUOTE")
+                realtime_quote_url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&entitlement=realtime&apikey={self.api_key}"
+                response = requests.get(realtime_quote_url)
+                data = response.json()
+                
+                if 'Global Quote' in data:
+                    quote_data = data['Global Quote']
+                    current_price = float(quote_data['05. price'])
+                    logger.info(f"Using real-time GLOBAL_QUOTE data from {quote_data.get('07. latest trading day', 'current')}")
+                else:
+                    logger.error(f"No real-time quote data returned for {symbol}: {data}")
+                    return None
+            
+            # With real-time data enabled, use the actual price from Alpha Vantage
+            # No simulation needed - we now have true real-time access
+            logger.info(f"Using real-time Alpha Vantage data: ${current_price}")
             
             # Cache the result
             self._cache_data(cache_key, current_price)
             
+            logger.info(f"Successfully fetched price for {symbol}: ${current_price}")
             return current_price
             
         except Exception as e:
