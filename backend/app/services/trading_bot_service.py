@@ -18,7 +18,7 @@ class TradingBotService:
     def __init__(self):
         self.is_running = False
         self.task: Optional[asyncio.Task] = None
-        self.trading_interval = 300  # 5 minutes default
+        self.trading_interval = 60  # 1 minute for more frequent trading during testing
         self.analysis_interval = 60   # 1 minute for market analysis
         self.last_trade_time = None
         self.est = pytz.timezone('US/Eastern')
@@ -65,9 +65,11 @@ class TradingBotService:
                     # Check if market is open
                     market_status = stock_service.get_market_status()
                     if not market_status.get("is_open", False):
-                        logger.debug("Market is closed, waiting...")
+                        logger.info(f"Market is closed (Current time: {market_status.get('current_time', 'Unknown')}), waiting...")
                         await asyncio.sleep(60)  # Check every minute when market is closed
                         continue
+                    else:
+                        logger.info(f"Market is open (Current time: {market_status.get('current_time', 'Unknown')})")
                     
                     # Check if we can make more trades today
                     if not portfolio_service.can_make_trade(db, config.max_daily_trades):
@@ -138,8 +140,25 @@ class TradingBotService:
                         timeout=30.0  # 30 second timeout per stock
                     )
                     
-                    if decision and decision.confidence >= 7:  # Only execute high-confidence trades
+                    if decision and decision.confidence >= 5:  # Lowered threshold for more trading activity
                         trading_decisions.append(decision)
+                        logger.info(f"Added trading decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10)")
+                    elif decision:
+                        logger.info(f"Low confidence decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10) - skipped")
+                        
+                        # Log low confidence decisions to activity feed
+                        try:
+                            activity = ActivityLog(
+                                action="LOW_CONFIDENCE_DECISION",
+                                details=f"AI suggested {decision.action.value} {decision.quantity} shares of {symbol} but confidence too low ({decision.confidence}/10)",
+                                timestamp=datetime.now(self.est)
+                            )
+                            db.add(activity)
+                            db.commit()
+                        except Exception as log_error:
+                            logger.error(f"Failed to log low confidence decision: {log_error}")
+                    else:
+                        logger.info(f"No trading decision generated for {symbol}")
                         
                 except asyncio.TimeoutError:
                     logger.warning(f"Timeout analyzing {symbol} - skipping")

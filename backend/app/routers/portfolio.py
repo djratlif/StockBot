@@ -35,7 +35,7 @@ async def get_portfolio_summary(db: Session = Depends(get_db)):
         if not portfolio:
             portfolio = portfolio_service.initialize_portfolio(db)
         
-        summary = portfolio_service.get_portfolio_summary(db)
+        summary = await portfolio_service.get_portfolio_summary(db)
         if not summary:
             raise HTTPException(status_code=404, detail="Portfolio not found")
         

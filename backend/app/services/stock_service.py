@@ -1,4 +1,3 @@
-import yfinance as yf
 import pandas as pd
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
@@ -14,138 +13,87 @@ class StockService:
     def __init__(self):
         self.cache = {}
         self.cache_duration = timedelta(minutes=1)  # Cache for 1 minute
-        self.use_alpha_vantage = True  # Primary data source
     
     async def get_stock_info(self, symbol: str, db_session=None) -> Optional[StockInfo]:
-        """Get comprehensive stock information with Alpha Vantage primary, Yahoo Finance fallback"""
+        """Get comprehensive stock information using Alpha Vantage only"""
         try:
             # Check cache first
             cache_key = f"{symbol}_info"
             if self._is_cached(cache_key):
                 return self.cache[cache_key]["data"]
             
-            # Try Alpha Vantage first
-            if self.use_alpha_vantage:
-                try:
-                    stock_info = await alpha_vantage_service.get_stock_info(symbol, db_session)
-                    if stock_info:
-                        logger.info(f"Successfully fetched {symbol} data from Alpha Vantage")
-                        self._cache_data(cache_key, stock_info)
-                        return stock_info
-                except Exception as e:
-                    logger.warning(f"Alpha Vantage failed for {symbol}: {str(e)}, falling back to Yahoo Finance")
-                    
-                    # Log fallback to database
-                    if db_session:
-                        try:
-                            from app.models.models import TradingLog
-                            fallback_log = TradingLog(
-                                level="WARNING",
-                                message=f"Alpha Vantage failed for {symbol}, using Yahoo Finance fallback: {str(e)}",
-                                symbol=symbol,
-                                trade_id=None
-                            )
-                            db_session.add(fallback_log)
-                            db_session.commit()
-                        except Exception as db_error:
-                            logger.error(f"Failed to log fallback to database: {db_error}")
-            
-            # Fallback to Yahoo Finance
-            logger.info(f"Using Yahoo Finance fallback for {symbol}")
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
-            hist = ticker.history(period="1d")
-            
-            if hist.empty:
-                logger.warning(f"No data found for symbol: {symbol}")
+            # Use Alpha Vantage
+            stock_info = await alpha_vantage_service.get_stock_info(symbol, db_session)
+            if stock_info:
+                logger.info(f"Successfully fetched {symbol} data from Alpha Vantage")
+                self._cache_data(cache_key, stock_info)
+                return stock_info
+            else:
+                logger.error(f"Failed to fetch stock info for {symbol} from Alpha Vantage")
                 return None
-            
-            current_price = hist['Close'].iloc[-1]
-            previous_close = info.get('previousClose', current_price)
-            change_percent = ((current_price - previous_close) / previous_close) * 100 if previous_close else 0
-            
-            stock_info = StockInfo(
-                symbol=symbol.upper(),
-                current_price=float(current_price),
-                change_percent=float(change_percent),
-                volume=int(hist['Volume'].iloc[-1]) if not hist['Volume'].empty else 0,
-                market_cap=info.get('marketCap'),
-                pe_ratio=info.get('trailingPE'),
-                week_52_high=info.get('fiftyTwoWeekHigh'),
-                week_52_low=info.get('fiftyTwoWeekLow')
-            )
-            
-            # Cache the result
-            self._cache_data(cache_key, stock_info)
-            return stock_info
-            
+                
         except Exception as e:
             logger.error(f"Error fetching stock info for {symbol}: {str(e)}")
             return None
     
     async def get_current_price(self, symbol: str) -> Optional[float]:
-        """Get current stock price with Alpha Vantage primary, Yahoo Finance fallback"""
+        """Get current stock price using Alpha Vantage only"""
         try:
             # Check cache first
             cache_key = f"{symbol}_price"
             if self._is_cached(cache_key):
                 return self.cache[cache_key]["data"]
             
-            # Try Alpha Vantage first
-            if self.use_alpha_vantage:
-                try:
-                    current_price = await alpha_vantage_service.get_current_price(symbol)
-                    if current_price:
-                        logger.info(f"Successfully fetched {symbol} price from Alpha Vantage: ${current_price}")
-                        self._cache_data(cache_key, current_price)
-                        return current_price
-                except Exception as e:
-                    logger.warning(f"Alpha Vantage price fetch failed for {symbol}: {str(e)}, falling back to Yahoo Finance")
-            
-            # Fallback to Yahoo Finance
-            logger.info(f"Using Yahoo Finance fallback for {symbol} price")
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="1d")
-            
-            if hist.empty:
+            # Use Alpha Vantage
+            current_price = await alpha_vantage_service.get_current_price(symbol)
+            if current_price:
+                logger.info(f"Successfully fetched {symbol} price from Alpha Vantage: ${current_price}")
+                self._cache_data(cache_key, current_price)
+                return current_price
+            else:
+                logger.error(f"Failed to fetch price for {symbol} from Alpha Vantage")
                 return None
-            
-            current_price = float(hist['Close'].iloc[-1])
-            
-            # Cache the result
-            self._cache_data(cache_key, current_price)
-            return current_price
             
         except Exception as e:
             logger.error(f"Error fetching price for {symbol}: {str(e)}")
             return None
     
-    def get_historical_data(self, symbol: str, period: str = "1mo") -> Optional[pd.DataFrame]:
-        """Get historical stock data"""
+    async def get_historical_data(self, symbol: str, period: str = "1mo") -> Optional[pd.DataFrame]:
+        """Get historical stock data using Alpha Vantage only"""
         try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period=period)
-            return hist if not hist.empty else None
+            # Check cache first
+            cache_key = f"{symbol}_historical_{period}"
+            if self._is_cached(cache_key):
+                return self.cache[cache_key]["data"]
+            
+            # Use Alpha Vantage
+            historical_data = await alpha_vantage_service.get_historical_data(symbol, period)
+            if historical_data:
+                logger.info(f"Successfully fetched historical data for {symbol} from Alpha Vantage")
+                self._cache_data(cache_key, historical_data)
+                return historical_data
+            else:
+                logger.error(f"Failed to fetch historical data for {symbol} from Alpha Vantage")
+                return None
+                
         except Exception as e:
             logger.error(f"Error fetching historical data for {symbol}: {str(e)}")
             return None
     
     def get_trending_stocks(self) -> List[str]:
         """Get list of trending stock symbols"""
-        # For now, return a curated list of popular stocks
-        # In production, this could be enhanced with actual trending data
+        # Return a curated list of popular stocks
         return [
             "AAPL", "GOOGL", "MSFT", "AMZN", "TSLA",
             "META", "NVDA", "NFLX", "AMD", "INTC",
             "SPY", "QQQ", "IWM", "DIA", "VTI"
         ]
     
-    def validate_symbol(self, symbol: str) -> bool:
-        """Validate if a stock symbol exists"""
+    async def validate_symbol(self, symbol: str) -> bool:
+        """Validate if a stock symbol exists using Alpha Vantage"""
         try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
-            return 'symbol' in info or 'shortName' in info
+            stock_info = await self.get_stock_info(symbol)
+            return stock_info is not None
         except:
             return False
     

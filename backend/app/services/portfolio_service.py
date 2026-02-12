@@ -45,7 +45,7 @@ class PortfolioService:
         """Get current portfolio"""
         return db.query(Portfolio).first()
     
-    def get_portfolio_summary(self, db: Session) -> Optional[PortfolioSummary]:
+    async def get_portfolio_summary(self, db: Session) -> Optional[PortfolioSummary]:
         """Get comprehensive portfolio summary"""
         try:
             portfolio = self.get_portfolio(db)
@@ -60,7 +60,7 @@ class PortfolioService:
             
             for holding in holdings:
                 # Update current price
-                current_price = stock_service.get_current_price(holding.symbol)
+                current_price = await stock_service.get_current_price(holding.symbol)
                 if current_price:
                     holding.current_price = current_price
                     db.commit()

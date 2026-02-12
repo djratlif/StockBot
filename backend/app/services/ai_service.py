@@ -1,4 +1,4 @@
-import openai
+from openai import OpenAI
 from typing import Dict, List, Optional
 import logging
 import json
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class AITradingService:
     def __init__(self):
-        openai.api_key = settings.openai_api_key
+        self.client = OpenAI(api_key=settings.openai_api_key)
         self.model = "gpt-4"
         
     async def analyze_stock_for_trading(self,
@@ -50,7 +50,7 @@ class AITradingService:
                 return None
             
             # Get historical data for context
-            historical_data = stock_service.get_historical_data(symbol, period="1mo")
+            historical_data = await stock_service.get_historical_data(symbol, period="1mo")
             if historical_data is None:
                 logger.error(f"Could not fetch historical data for {symbol}")
                 return None
@@ -72,7 +72,7 @@ class AITradingService:
             )
             
             # Get AI recommendation
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "You are an expert stock trader with deep knowledge of market analysis, technical indicators, and risk management."},
@@ -85,10 +85,13 @@ class AITradingService:
             ai_response = response.choices[0].message.content
             
             # Parse the AI response
+            logger.info(f"AI Response for {symbol}: {ai_response[:200]}...")  # Log first 200 chars
             decision = self._parse_ai_response(ai_response, stock_info, available_cash)
             
             if decision:
                 logger.info(f"AI Decision for {symbol}: {decision.action} {decision.quantity} shares (Confidence: {decision.confidence}/10)")
+            else:
+                logger.warning(f"No valid trading decision parsed for {symbol} from AI response")
             
             return decision
             
@@ -107,10 +110,21 @@ class AITradingService:
                              historical_data) -> str:
         """Build the prompt for AI analysis"""
         
-        # Calculate some basic technical indicators
-        recent_prices = historical_data['Close'].tail(10).tolist()
-        volume_avg = historical_data['Volume'].tail(10).mean()
-        price_trend = "UPWARD" if recent_prices[-1] > recent_prices[0] else "DOWNWARD"
+        # Calculate some basic technical indicators from Alpha Vantage data format
+        try:
+            # Alpha Vantage returns data as dict with dates as keys
+            # Convert to lists for analysis
+            dates = sorted(historical_data.keys())[-10:]  # Last 10 days
+            recent_prices = [float(historical_data[date]['4. close']) for date in dates]
+            recent_volumes = [int(historical_data[date]['5. volume']) for date in dates]
+            volume_avg = sum(recent_volumes) / len(recent_volumes) if recent_volumes else 0
+            price_trend = "UPWARD" if recent_prices[-1] > recent_prices[0] else "DOWNWARD"
+        except Exception as e:
+            logger.warning(f"Error processing historical data for {stock_info.symbol}: {e}")
+            # Fallback values
+            recent_prices = [stock_info.current_price]
+            volume_avg = stock_info.volume or 0
+            price_trend = "NEUTRAL"
         
         current_position = current_holdings.get(stock_info.symbol, {})
         current_shares = current_position.get('quantity', 0)
@@ -134,12 +148,12 @@ CURRENT POSITION IN {stock_info.symbol}:
 STOCK ANALYSIS FOR {stock_info.symbol}:
 - Current Price: ${stock_info.current_price:.2f}
 - Daily Change: {stock_info.change_percent:.2f}%
-- Volume: {stock_info.volume:,}
+- Volume: {"{:,}".format(stock_info.volume) if stock_info.volume else "N/A"}
 - Average Volume (10-day): {volume_avg:,.0f}
-- Market Cap: ${stock_info.market_cap:,}" if stock_info.market_cap else "N/A"
-- P/E Ratio: {stock_info.pe_ratio:.2f}" if stock_info.pe_ratio else "N/A"
-- 52-Week High: ${stock_info.week_52_high:.2f}" if stock_info.week_52_high else "N/A"
-- 52-Week Low: ${stock_info.week_52_low:.2f}" if stock_info.week_52_low else "N/A"
+- Market Cap: {"${:,}".format(stock_info.market_cap) if stock_info.market_cap else "N/A"}
+- P/E Ratio: {"{:.2f}".format(stock_info.pe_ratio) if stock_info.pe_ratio else "N/A"}
+- 52-Week High: {"${:.2f}".format(stock_info.week_52_high) if stock_info.week_52_high else "N/A"}
+- 52-Week Low: {"${:.2f}".format(stock_info.week_52_low) if stock_info.week_52_low else "N/A"}
 - Recent Price Trend: {price_trend}
 
 TRADING CONSTRAINTS:
@@ -173,46 +187,62 @@ Consider:
     def _parse_ai_response(self, response: str, stock_info: StockInfo, available_cash: float) -> Optional[TradingDecision]:
         """Parse the AI response into a TradingDecision object"""
         try:
+            logger.info(f"Parsing AI response for {stock_info.symbol}:")
+            logger.info(f"Full AI Response: {response}")
+            
             # Extract action
             action_match = re.search(r'ACTION:\s*(BUY|SELL|HOLD)', response, re.IGNORECASE)
             if not action_match:
-                logger.error("Could not parse ACTION from AI response")
+                logger.error(f"Could not parse ACTION from AI response for {stock_info.symbol}")
+                logger.error(f"Looking for pattern 'ACTION: BUY/SELL/HOLD' in: {response[:500]}...")
                 return None
             
             action = action_match.group(1).upper()
+            logger.info(f"Parsed ACTION: {action}")
+            
             if action == "HOLD":
+                logger.info(f"AI recommends HOLD for {stock_info.symbol} - no trading decision needed")
                 return None  # No trading decision needed
             
             # Extract quantity
             quantity_match = re.search(r'QUANTITY:\s*(\d+)', response)
             if not quantity_match:
-                logger.error("Could not parse QUANTITY from AI response")
+                logger.error(f"Could not parse QUANTITY from AI response for {stock_info.symbol}")
+                logger.error(f"Looking for pattern 'QUANTITY: [number]' in: {response[:500]}...")
                 return None
             
             quantity = int(quantity_match.group(1))
+            logger.info(f"Parsed QUANTITY: {quantity}")
+            
             if quantity <= 0:
+                logger.warning(f"Invalid quantity {quantity} for {stock_info.symbol}")
                 return None
             
             # Extract confidence
             confidence_match = re.search(r'CONFIDENCE:\s*(\d+)', response)
             confidence = int(confidence_match.group(1)) if confidence_match else 5
             confidence = max(1, min(10, confidence))  # Ensure it's between 1-10
+            logger.info(f"Parsed CONFIDENCE: {confidence}")
             
             # Extract reasoning
             reasoning_match = re.search(r'REASONING:\s*(.+?)(?:\n|$)', response, re.DOTALL)
             reasoning = reasoning_match.group(1).strip() if reasoning_match else "AI analysis completed"
+            logger.info(f"Parsed REASONING: {reasoning[:100]}...")
             
             # Validate the decision
             if action == "BUY":
                 max_shares = int(available_cash / stock_info.current_price)
                 if quantity > max_shares:
+                    original_quantity = quantity
                     quantity = max_shares
-                    reasoning += f" (Adjusted quantity to {quantity} shares based on available cash)"
+                    reasoning += f" (Adjusted quantity from {original_quantity} to {quantity} shares based on available cash)"
+                    logger.info(f"Adjusted BUY quantity from {original_quantity} to {quantity} for {stock_info.symbol}")
             
             if quantity <= 0:
+                logger.warning(f"Final quantity is 0 or negative for {stock_info.symbol}")
                 return None
             
-            return TradingDecision(
+            decision = TradingDecision(
                 action=TradeActionEnum(action),
                 symbol=stock_info.symbol,
                 quantity=quantity,
@@ -221,9 +251,12 @@ Consider:
                 current_price=stock_info.current_price
             )
             
+            logger.info(f"Successfully created trading decision for {stock_info.symbol}: {action} {quantity} shares (confidence: {confidence})")
+            return decision
+            
         except Exception as e:
-            logger.error(f"Error parsing AI response: {str(e)}")
-            logger.error(f"AI Response was: {response}")
+            logger.error(f"Error parsing AI response for {stock_info.symbol}: {str(e)}")
+            logger.error(f"Full AI Response was: {response}")
             return None
     
     def get_market_sentiment(self, symbols: List[str]) -> Dict[str, str]:
@@ -248,7 +281,7 @@ SYMBOL: SENTIMENT - Brief reason
 Keep each analysis to one line.
 """
             
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "You are a market analyst providing quick sentiment analysis."},
